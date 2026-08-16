@@ -21,7 +21,7 @@ export default function Step2PricingVariations() {
 
   const handleAddVariation = () => {
     append({
-      sku: `SKU-VAR-${Date.now().toString().slice(-4)}`,
+      sku: `SKU-RED-${Date.now().toString().slice(-4)}`,
       color: 'Default',
       size: 'Standard',
       extraPrice: 0,
