@@ -1,0 +1,8 @@
+#!/bin/sh
+echo "🔍 Running pre-push checks (pnpm lint & pnpm build)..."
+
+if command -v pnpm >/dev/null 2>&1; then
+  pnpm lint && pnpm build
+else
+  npm run lint && npm run build
+fi
