@@ -1,21 +1,23 @@
 'use client';
 
 import React from 'react';
-import { useFormContext, useFieldArray } from 'react-hook-form';
+import { useFormContext, useFieldArray, useWatch } from 'react-hook-form';
 import { ProductFormData } from '@/lib/types/product';
 import Input from '../ui/Input';
 import NumberInput from '../ui/NumberInput';
 import Button from '../ui/Button';
-import { Trash2, Plus, Layers } from 'lucide-react';
+import { Trash2, Plus, Layers, AlertCircle } from 'lucide-react';
 import { CardHeader, CardTitle, CardDescription } from '../ui/Card';
 import { FormField, FormItem, FormLabel, FormControl, FormMessage } from '../ui/Form';
 
 export default function Step2PricingVariations() {
-  const { control } = useFormContext<ProductFormData>();
+  const { control, formState: { errors } } = useFormContext<ProductFormData>();
   const { fields, append, remove } = useFieldArray({
     control,
     name: 'variations',
   });
+
+  const watchedVariations = useWatch({ control, name: 'variations' }) || [];
 
   const handleAddVariation = () => {
     append({
@@ -25,6 +27,8 @@ export default function Step2PricingVariations() {
       extraPrice: 0,
     });
   };
+
+  const variationsError = errors.variations?.root?.message || (typeof errors.variations?.message === 'string' ? errors.variations.message : null);
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -118,6 +122,13 @@ export default function Step2PricingVariations() {
           </Button>
         </div>
 
+        {variationsError && (
+          <div className="p-3 bg-danger-50 border border-danger-100 rounded-lg text-xs font-bold text-danger-500 flex items-center gap-2 animate-fadeIn">
+            <AlertCircle className="w-4 h-4 text-danger-500 shrink-0" />
+            <span>{variationsError}</span>
+          </div>
+        )}
+
         {fields.length === 0 ? (
           <div className="p-6 text-center border-2 border-dashed border-surface-border rounded-2xl bg-surface-bg space-y-2">
             <p className="text-xs text-surface-subtle font-medium">No custom variations added yet.</p>
@@ -133,89 +144,107 @@ export default function Step2PricingVariations() {
           </div>
         ) : (
           <div className="space-y-3">
-            {fields.map((fieldItem, index) => (
-              <div
-                key={fieldItem.id}
-                className="p-4 bg-surface-bg border border-surface-border rounded-xl space-y-3 relative group"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-brand-500">
-                    Variant #{index + 1}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => remove(index)}
-                    className="text-danger-500 hover:text-danger-600 p-1 rounded transition-colors"
-                    title="Remove variant"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+            {fields.map((fieldItem, index) => {
+              const currentSku = watchedVariations[index]?.sku?.trim().toUpperCase();
+              const isDuplicateSku = Boolean(
+                currentSku &&
+                  watchedVariations.filter((v, i) => i !== index && v?.sku?.trim().toUpperCase() === currentSku).length > 0
+              );
+
+              return (
+                <div
+                  key={fieldItem.id}
+                  className="p-4 bg-surface-bg border border-surface-border rounded-xl space-y-3 relative group"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-brand-500">
+                      Variant #{index + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => remove(index)}
+                      className="text-danger-500 hover:text-danger-600 p-1 rounded transition-colors"
+                      title="Remove variant"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <FormField
+                      control={control}
+                      name={`variations.${index}.sku`}
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel>SKU Code</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="SKU-RED-1001"
+                              error={Boolean(fieldState.error || isDuplicateSku)}
+                            />
+                          </FormControl>
+                          {isDuplicateSku && !fieldState.error ? (
+                            <p className="text-[11px] font-bold text-danger-500 mt-1">
+                              Duplicate SKU code detected
+                            </p>
+                          ) : (
+                            <FormMessage />
+                          )}
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={control}
+                      name={`variations.${index}.color`}
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel>Color / Variant</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="Black" error={Boolean(fieldState.error)} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={control}
+                      name={`variations.${index}.size`}
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel>Size</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="XL / 42" error={Boolean(fieldState.error)} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={control}
+                      name={`variations.${index}.extraPrice`}
+                      render={({ field, fieldState }) => (
+                        <FormItem>
+                          <FormLabel>Extra Price ($)</FormLabel>
+                          <FormControl>
+                            <NumberInput
+                              {...field}
+                              prefixSymbol="+$"
+                              placeholder="0.00"
+                              error={Boolean(fieldState.error)}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <FormField
-                    control={control}
-                    name={`variations.${index}.sku`}
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel>SKU Code</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="SKU-RED-1001" error={Boolean(fieldState.error)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={control}
-                    name={`variations.${index}.color`}
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel>Color / Variant</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Black" error={Boolean(fieldState.error)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={control}
-                    name={`variations.${index}.size`}
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel>Size</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="XL / 42" error={Boolean(fieldState.error)} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={control}
-                    name={`variations.${index}.extraPrice`}
-                    render={({ field, fieldState }) => (
-                      <FormItem>
-                        <FormLabel>Extra Price ($)</FormLabel>
-                        <FormControl>
-                          <NumberInput
-                            {...field}
-                            prefixSymbol="+$"
-                            placeholder="5.00"
-                            error={Boolean(fieldState.error)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
