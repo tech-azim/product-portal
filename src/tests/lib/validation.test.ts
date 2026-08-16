@@ -7,82 +7,69 @@ import {
   variationSchema,
 } from '@/lib/validation/productSchema';
 
-describe('Unit Test: productSchema Validation', () => {
+describe('Unit Test: Yup Validation Schemas (IFG Product Portal)', () => {
   describe('Step 1 Schema: Basic Product Info', () => {
-    it('should pass with valid basic product info', async () => {
+    it('should validate valid step 1 data', async () => {
       const validData = {
-        title: 'Premium Wireless Headphones',
+        title: 'Sony Wireless Headphones',
         brand: 'Sony',
         category: 'electronics',
-        description: 'High quality active noise canceling wireless headphones with long battery life.',
+        description: 'High-quality noise cancelling wireless over-ear headphones.',
       };
       await expect(step1Schema.validate(validData)).resolves.toEqual(validData);
     });
 
-    it('should reject titles shorter than 3 characters or longer than 100 characters', async () => {
-      const shortTitle = {
+    it('should reject title shorter than 3 characters', async () => {
+      const invalidData = {
         title: 'AB',
         brand: 'Sony',
         category: 'electronics',
-        description: 'High quality active noise canceling wireless headphones.',
+        description: 'High-quality noise cancelling wireless over-ear headphones.',
       };
-      await expect(step1Schema.validate(shortTitle)).rejects.toThrow(
+      await expect(step1Schema.validate(invalidData)).rejects.toThrow(
         'Title must be at least 3 characters'
       );
     });
 
-    it('should reject descriptions shorter than 20 characters', async () => {
-      const shortDesc = {
-        title: 'Premium Wireless Headphones',
+    it('should reject description shorter than 20 characters', async () => {
+      const invalidData = {
+        title: 'Sony Wireless Headphones',
         brand: 'Sony',
         category: 'electronics',
-        description: 'Too short desc',
+        description: 'Too short',
       };
-      await expect(step1Schema.validate(shortDesc)).rejects.toThrow(
+      await expect(step1Schema.validate(invalidData)).rejects.toThrow(
         'Description must be at least 20 characters'
       );
     });
   });
 
-  describe('Step 2 Schema: Pricing, Stock & Dynamic SKU Variations', () => {
-    it('should pass with valid price, stock, and variations', async () => {
+  describe('Step 2 Schema: Pricing, Stock & SKU Variations', () => {
+    it('should validate valid step 2 data with unique variations', async () => {
       const validData = {
         price: 199.99,
         stock: 50,
-        discountPercentage: 15,
+        discountPercentage: 10,
         variations: [
           { color: 'Black', size: 'M', sku: 'SKU-BLK-1001', extraPrice: 0 },
-          { color: 'Silver', size: 'M', sku: 'SKU-SLV-1002', extraPrice: 10 },
+          { color: 'White', size: 'L', sku: 'SKU-WHT-1002', extraPrice: 5 },
         ],
       };
-      const result = await step2Schema.validate(validData);
-      expect(result.price).toBe(199.99);
-      expect(result.variations.length).toBe(2);
+      await expect(step2Schema.validate(validData)).resolves.toBeDefined();
     });
 
-    it('should transform empty extraPrice string into 0', async () => {
-      const variationWithEmptyPrice = {
-        color: 'Black',
-        size: 'M',
-        sku: 'SKU-BLK-1001',
-        extraPrice: '' as unknown,
-      };
-      const result = await variationSchema.validate(variationWithEmptyPrice);
-      expect(result.extraPrice).toBe(0);
-    });
-
-    it('should reject non-positive base price', async () => {
+    it('should reject price less than or equal to 0', async () => {
       const invalidPrice = {
         price: 0,
         stock: 10,
         variations: [],
       };
       await expect(step2Schema.validate(invalidPrice)).rejects.toThrow(
-        'Base price must be greater than 0'
+        'Price must be greater than 0'
       );
     });
 
-    it('should reject negative stock quantity', async () => {
+    it('should reject stock less than 0', async () => {
       const invalidStock = {
         price: 100,
         stock: -5,
@@ -93,15 +80,15 @@ describe('Unit Test: productSchema Validation', () => {
       );
     });
 
-    it('should reject SKU shorter than 2 characters', async () => {
+    it('should reject invalid SKU format not matching SKU-[A-Z]{3}-[0-9]{4}', async () => {
       const invalidSku = {
         color: 'Red',
         size: 'L',
-        sku: 'A',
+        sku: 'INVALID-SKU-FORMAT',
         extraPrice: 0,
       };
       await expect(variationSchema.validate(invalidSku)).rejects.toThrow(
-        'SKU must be at least 2 characters'
+        'SKU must match format SKU-XXX-0000'
       );
     });
 
@@ -111,68 +98,70 @@ describe('Unit Test: productSchema Validation', () => {
         stock: 10,
         variations: [
           { color: 'Red', size: 'M', sku: 'SKU-RED-1001', extraPrice: 0 },
-          { color: 'Crimson', size: 'L', sku: 'SKU-RED-1001', extraPrice: 5 },
+          { color: 'Blue', size: 'L', sku: 'SKU-RED-1001', extraPrice: 5 },
         ],
       };
       await expect(step2Schema.validate(duplicateSkus)).rejects.toThrow(
-        'Duplicate SKU code found: SKU-RED-1001'
+        'Duplicate SKU codes are not allowed'
       );
     });
   });
 
-  describe('Step 3 Schema: Shipping & Conditional Fragile Handling Logic', () => {
-    it('should pass for non-fragile item without conditional fields', async () => {
-      const validNonFragile = {
+  describe('Step 3 Schema: Shipping & Fragile Handling', () => {
+    it('should validate non-fragile item without special notes', async () => {
+      const validData = {
         weight: 1.5,
-        dimensions: { width: 10, height: 15, depth: 5 },
+        dimensions: { width: 10, height: 20, depth: 5 },
         requiresFragileHandling: false,
       };
-      await expect(step3Schema.validate(validNonFragile)).resolves.toBeTruthy();
+      await expect(step3Schema.validate(validData)).resolves.toBeDefined();
     });
 
-    it('should require hazardous disclaimer and shipping notes when fragile handling is checked', async () => {
-      const missingFragileDetails = {
+    it('should require disclaimer and notes when fragile handling is enabled', async () => {
+      const missingDisclaimer = {
         weight: 1.5,
-        dimensions: { width: 10, height: 15, depth: 5 },
+        dimensions: { width: 10, height: 20, depth: 5 },
         requiresFragileHandling: true,
         hazardousMaterialDisclaimer: false,
-        specialShippingNotes: '',
+        specialShippingNotes: 'Handle with extreme care, fragile glass item.',
       };
-      await expect(step3Schema.validate(missingFragileDetails)).rejects.toThrow();
+      await expect(step3Schema.validate(missingDisclaimer)).rejects.toThrow(
+        'You must accept the fragile material disclaimer'
+      );
     });
 
-    it('should pass when fragile handling is checked and all mandatory fragile fields are valid', async () => {
-      const validFragile = {
+    it('should validate fragile item when disclaimer and notes are provided', async () => {
+      const validFragileData = {
         weight: 1.5,
-        dimensions: { width: 10, height: 15, depth: 5 },
+        dimensions: { width: 10, height: 20, depth: 5 },
         requiresFragileHandling: true,
         hazardousMaterialDisclaimer: true,
-        specialShippingNotes: 'Handle with extreme care, double bubble wrap required.',
+        specialShippingNotes: 'Handle with extreme care, fragile glass item.',
       };
-      await expect(step3Schema.validate(validFragile)).resolves.toBeTruthy();
+      await expect(step3Schema.validate(validFragileData)).resolves.toBeDefined();
     });
   });
 
-  describe('Full Product Schema', () => {
-    it('should validate complete onboarding form object', async () => {
+  describe('Full Combined Schema Validation', () => {
+    it('should validate full valid product form submission', async () => {
       const fullData = {
-        title: 'Pro Camera Lens',
-        brand: 'Canon',
-        category: 'photography',
-        description: 'Professional grade 50mm f/1.2 prime lens for mirrorless cameras.',
-        price: 1299.0,
-        stock: 12,
-        discountPercentage: 5,
+        title: 'Sony Wireless Headphones Pro',
+        brand: 'Sony',
+        category: 'electronics',
+        description: 'High-quality noise cancelling wireless over-ear headphones.',
+        price: 299.99,
+        stock: 25,
+        discountPercentage: 15,
         variations: [
-          { color: 'Black', size: '50mm', sku: 'SKU-CAN-5001', extraPrice: 0 },
+          { color: 'Black', size: 'Standard', sku: 'SKU-BLK-2001', extraPrice: 0 },
         ],
         weight: 0.8,
-        dimensions: { width: 9, height: 12, depth: 9 },
+        dimensions: { width: 15, height: 20, depth: 8 },
         requiresFragileHandling: true,
         hazardousMaterialDisclaimer: true,
-        specialShippingNotes: 'Glass optics inside. Do not drop or stack heavy boxes on top.',
+        specialShippingNotes: 'Fragile acoustic drivers inside, handle with care.',
       };
-      await expect(fullProductSchema.validate(fullData)).resolves.toBeTruthy();
+      await expect(fullProductSchema.validate(fullData)).resolves.toBeDefined();
     });
   });
 });

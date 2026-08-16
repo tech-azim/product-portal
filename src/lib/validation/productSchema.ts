@@ -7,6 +7,8 @@ const transformNumber = (value: unknown, originalValue: unknown) => {
   return value;
 };
 
+export const SKU_REGEX = /^SKU-[A-Z]{3}-[0-9]{4}$/;
+
 export const variationSchema = yup.object().shape({
   id: yup.string().optional(),
   color: yup.string().required('Color is required'),
@@ -14,8 +16,7 @@ export const variationSchema = yup.object().shape({
   sku: yup
     .string()
     .required('SKU Code is required')
-    .min(2, 'SKU must be at least 2 characters')
-    .max(50, 'SKU cannot exceed 50 characters'),
+    .matches(SKU_REGEX, 'SKU must match format SKU-XXX-0000 (e.g. SKU-RED-1001)'),
   extraPrice: yup
     .number()
     .transform((val: unknown, orig: unknown) => (orig === '' || Number.isNaN(val) ? 0 : Number(val)))
@@ -29,61 +30,48 @@ export const step1Schema = yup.object().shape({
     .required('Product Title is required')
     .min(3, 'Title must be at least 3 characters')
     .max(100, 'Title cannot exceed 100 characters'),
-  brand: yup.string().required('Brand is required'),
+  brand: yup
+    .string()
+    .required('Brand is required')
+    .min(2, 'Brand must be at least 2 characters'),
   category: yup.string().required('Category is required'),
   description: yup
     .string()
     .required('Description is required')
-    .min(20, 'Description must be at least 20 characters'),
+    .min(20, 'Description must be at least 20 characters')
+    .max(1000, 'Description cannot exceed 1000 characters'),
 });
 
 export const step2Schema = yup.object().shape({
   price: yup
     .number()
     .transform(transformNumber)
-    .required('Base price is required')
-    .moreThan(0, 'Base price must be greater than 0'),
+    .required('Base Price is required')
+    .positive('Price must be greater than 0'),
   stock: yup
     .number()
     .transform(transformNumber)
-    .required('Stock quantity is required')
+    .required('Stock Quantity is required')
     .min(0, 'Stock must be 0 or greater')
-    .integer('Stock must be a whole number'),
+    .integer('Stock must be an integer'),
   discountPercentage: yup
     .number()
     .transform(transformNumber)
-    .optional()
     .nullable()
-    .min(0, 'Discount cannot be negative')
-    .max(99, 'Discount cannot exceed 99%'),
+    .optional()
+    .min(0, 'Discount must be between 0 and 99')
+    .max(99, 'Discount must be between 0 and 99'),
   variations: yup
     .array()
     .of(variationSchema)
-    .test(
-      'unique-sku',
-      'SKU codes must be unique across variations',
-      function (variations) {
-        if (!variations || variations.length === 0) return true;
-        const skus = variations
-          .map((v) => v?.sku?.trim().toUpperCase())
-          .filter((sku): sku is string => Boolean(sku));
-        const uniqueSkus = new Set(skus);
-        if (uniqueSkus.size !== skus.length) {
-          const seen = new Set<string>();
-          const duplicates = new Set<string>();
-          skus.forEach((sku) => {
-            if (seen.has(sku)) duplicates.add(sku);
-            seen.add(sku);
-          });
-          return this.createError({
-            message: `Duplicate SKU code found: ${Array.from(duplicates).join(', ')}`,
-            path: 'variations',
-          });
-        }
-        return true;
-      }
-    )
-    .default([]),
+    .optional()
+    .test('unique-sku', 'Duplicate SKU codes are not allowed', (variations) => {
+      if (!variations || variations.length === 0) return true;
+      const skus = variations
+        .map((v) => v.sku?.trim().toUpperCase())
+        .filter(Boolean);
+      return skus.length === new Set(skus).size;
+    }),
 });
 
 export const step3Schema = yup.object().shape({
@@ -91,45 +79,44 @@ export const step3Schema = yup.object().shape({
     .number()
     .transform(transformNumber)
     .required('Weight is required')
-    .moreThan(0, 'Weight must be greater than 0 kg'),
+    .positive('Weight must be greater than 0'),
   dimensions: yup.object().shape({
     width: yup
       .number()
       .transform(transformNumber)
       .required('Width is required')
-      .moreThan(0, 'Width must be greater than 0'),
+      .positive('Width must be greater than 0'),
     height: yup
       .number()
       .transform(transformNumber)
       .required('Height is required')
-      .moreThan(0, 'Height must be greater than 0'),
+      .positive('Height must be greater than 0'),
     depth: yup
       .number()
       .transform(transformNumber)
       .required('Depth is required')
-      .moreThan(0, 'Depth must be greater than 0'),
+      .positive('Depth must be greater than 0'),
   }),
   requiresFragileHandling: yup.boolean().default(false),
   hazardousMaterialDisclaimer: yup.boolean().when('requiresFragileHandling', {
     is: true,
     then: (schema) =>
-      schema
-        .oneOf([true], 'You must acknowledge the hazardous material disclaimer for fragile items')
-        .required(),
+      schema.oneOf([true], 'You must accept the fragile material disclaimer'),
     otherwise: (schema) => schema.optional(),
   }),
   specialShippingNotes: yup.string().when('requiresFragileHandling', {
     is: true,
     then: (schema) =>
       schema
-        .required('Special shipping notes are required for fragile items')
-        .min(10, 'Special shipping notes must be at least 10 characters'),
+        .required('Special shipping notes are required when fragile handling is enabled')
+        .min(10, 'Shipping notes must be at least 10 characters'),
     otherwise: (schema) => schema.optional(),
   }),
 });
 
-export const fullProductSchema = yup.object().shape({
-  ...step1Schema.fields,
-  ...step2Schema.fields,
-  ...step3Schema.fields,
-});
+export const fullProductSchema = yup
+  .object()
+  .shape({})
+  .concat(step1Schema)
+  .concat(step2Schema)
+  .concat(step3Schema);
