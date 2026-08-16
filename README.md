@@ -58,6 +58,28 @@ Race conditions are eliminated through a two-layer architecture:
 1. **Client-Side Debouncing (300ms)**: The `useProductFilters` custom hook uses a 300ms `setTimeout` buffer before updating the debounced search state passed to RTK Query. Rapid keystrokes defer triggering API calls until typing pauses.
 2. **RTK Query Request Serialization & Abort Controllers**: RTK Query automatically manages request lifecycle keys per query parameter set (`GetProductsQueryParams`). When new parameters are dispatched before an existing asynchronous HTTP request resolves, RTK Query aborts/ignores stale pending promises, ensuring only response data matching the latest query arguments is committed to the Redux cache.
 
+#### Implementation Code Snippet (`src/lib/hooks/useProductFilters.ts`):
+```typescript
+// 1. Client-side 300ms Debounce Handler
+useEffect(() => {
+  const handler = setTimeout(() => {
+    setDebouncedSearch(search);
+  }, 300);
+  return () => clearTimeout(handler);
+}, [search]);
+
+// 2. RTK Query Request Serialization & Auto-Aborting Stale Promises
+const { data, isLoading, isFetching } = useGetProductsQuery({
+  page,
+  limit,
+  search: debouncedSearch,
+  category,
+  sort,
+});
+```
+
+---
+
 ### 2. State Distribution Boundaries
 **Question:** *What was your architectural reasoning for separating state between Redux Toolkit, API Cache, and React Hook Form?*
 
@@ -68,6 +90,24 @@ State is partitioned into four distinct layers according to lifecycle, persisten
 - **RTK Query Cache (`productsApi`)**: Serves as normalized server state handling API caching, tag-based cache invalidation, deduplication, and optimistic update patch management (`updateQueryData`).
 - **React Hook Form (Local Component State)**: Encapsulates transient input field state during active form editing. Keeping step form inputs inside local component state prevents unnecessary global store dispatching and top-level page re-renders on every keystroke.
 
+#### Implementation Code Snippet (`src/app/products/page.tsx` & `src/lib/redux/store.ts`):
+```typescript
+// Layer 1: URL SearchParams (Single Source of Truth for Catalog View)
+const { page, category, sort, search, setFilter } = useProductFilters();
+
+// Layer 2: Redux Toolkit (Client UI State & Toast System)
+const dispatch = useAppDispatch();
+const { viewMode, isFilterDrawerOpen } = useAppSelector((state) => state.ui);
+
+// Layer 3: RTK Query Server Cache (Normalized Server State)
+const { data: productsData } = useGetProductsQuery({ page, limit, search, category, sort });
+
+// Layer 4: React Hook Form (Transient Editing State inside Step Forms)
+const methods = useForm<ProductFormData>({ resolver: yupResolver(step1Schema) });
+```
+
+---
+
 ### 3. Re-render Optimization
 **Question:** *What specific techniques or React patterns did you apply to prevent unnecessary re-renders in the dynamic SKU variations field array (`useFieldArray`)?*
 
@@ -77,6 +117,25 @@ Re-render performance in the dynamic SKU variation list is optimized using the f
 2. **Isolated Field Registration**: Input fields bind directly via scoped field paths (`variations.${index}.sku`). Input changes trigger targeted field updates rather than re-evaluating the entire parent wizard container.
 3. **Selective Subscriptions with `useWatch`**: In Step 3, fragile shipping fields use targeted `useWatch({ name: 'requiresFragileHandling' })` subscriptions, limiting re-renders exclusively to the fragile handling container rather than re-rendering Step 1 or Step 2 fields.
 
+#### Implementation Code Snippet (`src/components/wizard/Step2PricingVariations.tsx` & `Step3ShippingFragile.tsx`):
+```tsx
+// 1. Stable Keys & Isolated Field Registrations via useFieldArray
+const { fields, append, remove } = useFieldArray({ control, name: 'variations' });
+
+{fields.map((field, index) => (
+  <div key={field.id} className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+    <Input {...register(`variations.${index}.sku`)} placeholder="SKU-RED-1001" />
+    <Input {...register(`variations.${index}.color`)} placeholder="Color" />
+    ...
+  </div>
+))}
+
+// 2. Targeted Component Subscription via useWatch
+const requiresFragileHandling = useWatch({ control, name: 'requiresFragileHandling' });
+```
+
+---
+
 ### 4. Resilience Strategy
 **Question:** *How did you implement state rollback for optimistic updates when API calls fail?*
 
@@ -85,6 +144,40 @@ Optimistic update resilience is implemented using RTK Query's `onQueryStarted` l
 1. **Optimistic Patch Application**: When a `deleteProduct` or `updateProduct` mutation is triggered, `dispatch(productsApi.util.updateQueryData(...))` immediately mutates the cached products list, providing instant UI feedback (< 16ms).
 2. **Error Recovery & Patch Rollback**: The mutation promise is awaited (`queryFulfilled`). If the network request fails (or if the 20% simulated network failure mode is active), `patchResult.undo()` is immediately called in the `catch` block to restore the exact previous cache state.
 3. **User Feedback & Retry Action**: An error Toast notification is dispatched containing a `retryPayload`. Clicking the **"Retry Action"** button in the Toast re-triggers the mutation with the saved payload, ensuring seamless user recovery without data loss.
+
+#### Implementation Code Snippet (`src/lib/redux/api/productsApi.ts`):
+```typescript
+deleteProduct: builder.mutation<{ id: number }, { id: number; queryArgs?: GetProductsQueryParams }>({
+  query: ({ id }) => ({ url: `products/${id}`, method: 'DELETE' }),
+  async onQueryStarted({ id, queryArgs }, { dispatch, queryFulfilled, getState }) {
+    // 1. Apply Optimistic Cache Update (<16ms UI latency)
+    const patchResult = queryArgs
+      ? dispatch(
+          productsApi.util.updateQueryData('getProducts', queryArgs, (draft) => {
+            draft.products = draft.products.filter((p) => p.id !== id);
+            draft.total = Math.max(0, draft.total - 1);
+          })
+        )
+      : null;
+
+    try {
+      // 2. Await Network Resolution (Will throw if 20% failure simulation triggers)
+      await queryFulfilled;
+      dispatch(addToast({ message: `Product #${id} deleted successfully!`, type: 'success' }));
+    } catch {
+      // 3. Automatic Cache Rollback & Error Toast with Retry Payload
+      if (patchResult) patchResult.undo();
+      dispatch(
+        addToast({
+          message: `Network request failed to delete Product #${id}. State rolled back.`,
+          type: 'error',
+          retryPayload: { actionType: 'delete', productId: id },
+        })
+      );
+    }
+  },
+}),
+```
 
 ---
 
