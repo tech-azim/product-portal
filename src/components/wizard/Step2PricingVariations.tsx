@@ -19,7 +19,7 @@ export default function Step2PricingVariations() {
 
   const handleAddVariation = () => {
     append({
-      sku: `SKU-${Date.now().toString().slice(-4)}`,
+      sku: `SKU-VAR-${Date.now().toString().slice(-4)}`,
       color: 'Default',
       size: 'Standard',
       extraPrice: 0,
@@ -160,7 +160,7 @@ export default function Step2PricingVariations() {
                       <FormItem>
                         <FormLabel>SKU Code</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="SKU-001" error={Boolean(fieldState.error)} />
+                          <Input {...field} placeholder="SKU-RED-1001" error={Boolean(fieldState.error)} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
